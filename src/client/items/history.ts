@@ -5,6 +5,7 @@
  * https://opensource.org/licenses/MIT
  */
 
+import * as envpaths from 'env-paths';
 import * as fs from 'fs/promises';
 import { homedir } from 'os';
 import { Event, EventEmitter, MarkdownString, TreeDataProvider, TreeItem, TreeItemCollapsibleState } from 'vscode';
@@ -12,8 +13,8 @@ import path = require('path');
 import dayjs = require('dayjs');
 import { fileExists } from '../util/fs-utils';
 
-const cfgDir = homedir() + '/.vscode/';
-const historyPath = cfgDir + 'q-query-history.json';
+const oldHistoryPath = path.join(homedir(), '.vscode', 'q-query-history.json');
+const historyPath = path.join(envpaths.default('vscode-q').cache, 'q-query-history.json');
 
 type History = {
     uniqLabel: string,
@@ -74,17 +75,20 @@ export default class HistoryTreeItem extends TreeItem
             this._onDidChangeTreeData.fire(undefined);
             return;
         }
+
         // read the q query history file from home dir
-        if (await fileExists(historyPath)) {
-            const histories: History[] = JSON.parse(await fs.readFile(historyPath, 'utf8'));
-            this._children = histories.map(h => new HistoryTreeItem(h, HistoryTreeItem.currentHistoryTree));
-            this._onDidChangeTreeData.fire(undefined);
-        } else {
-            if (!await fileExists(cfgDir)) {
-                await fs.mkdir(cfgDir);
+        if (!await fileExists(historyPath)) {
+            await fs.mkdir(path.dirname(historyPath), { recursive: true });
+            if (await fileExists(oldHistoryPath)) {
+                await fs.copyFile(oldHistoryPath, historyPath);
+                await fs.unlink(oldHistoryPath);
+            } else {
+                await fs.writeFile(historyPath, '[]', 'utf8');
             }
-            await fs.writeFile(historyPath, '[]', 'utf8');
         }
+        const histories: History[] = JSON.parse(await fs.readFile(historyPath, 'utf8'));
+        this._children = histories.map(h => new HistoryTreeItem(h, HistoryTreeItem.currentHistoryTree));
+        this._onDidChangeTreeData.fire(undefined);
     }
 
     getParent(): TreeItem | null {
